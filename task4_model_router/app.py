@@ -1,7 +1,7 @@
-"""Task 4: completion endpoint with per-tenant token rate limiting and model fallback.
+"""Task 4 - /v1/chat/completions with per-tenant token limits and primary/secondary fallback.
 
-Every error uses one shape, and never includes upstream bodies or stack traces:
-    {"error": {"type": ..., "code": ..., "message": ..., "request_id": "req_..."}}
+All errors look like {"error": {"type", "code", "message", "request_id"}}.
+Upstream error bodies and tracebacks only go to the logs.
 """
 
 import hashlib
@@ -40,13 +40,13 @@ class ChatRequest(BaseModel):
 
 
 def hash_key(key: str) -> str:
-    # The database stores this hash, never the API key itself.
+    # store a hash in the DB, not the key itself
     return hashlib.sha256(key.encode()).hexdigest()
 
 
 def estimate_tokens(body: dict) -> int:
-    # About 4 characters per token, plus the most the model may write. This only
-    # sizes the reservation; it is corrected to the real usage afterwards.
+    # rough estimate (~4 chars per token) + max_tokens. Gets replaced with the
+    # real usage once the model responds.
     prompt_chars = sum(len(str(m.get("content", ""))) for m in body["messages"])
     return prompt_chars // 4 + (body.get("max_tokens") or DEFAULT_MAX_TOKENS)
 
@@ -80,7 +80,7 @@ def create_app(limiter: TokenRateLimiter | None = None, router: ModelRouter | No
 
     @app.exception_handler(RequestValidationError)
     async def invalid_body(request, e: RequestValidationError):
-        # Which field and what's wrong, but not the submitted value.
+        # field + problem, without echoing the submitted value
         fields = [{"field": ".".join(str(p) for p in err["loc"][1:]), "issue": err["msg"]} for err in e.errors()]
         return error_response(request, 400, "invalid_request_error", "invalid_body", "The request body is invalid.", fields=fields)
 
@@ -130,7 +130,7 @@ def create_app(limiter: TokenRateLimiter | None = None, router: ModelRouter | No
             await limiter.release(row_id)
             raise
 
-        # Replace the estimate with what the model actually used.
+        # swap the estimate for the actual usage
         actual = data.get("usage", {}).get("total_tokens")
         if isinstance(actual, int):
             await limiter.update(row_id, actual)

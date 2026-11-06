@@ -1,4 +1,4 @@
-"""Sends a completion to the primary model, falling back to the secondary on 429, 5xx or timeout."""
+"""Try the primary model (3s max) and fall back to the secondary on 429, 5xx, timeout or connection errors."""
 
 import asyncio
 import logging
@@ -12,14 +12,14 @@ class UpstreamError(Exception):
     def __init__(self, reason: str, retryable: bool = True):
         super().__init__(reason)
         self.reason = reason
-        self.retryable = retryable  # False for client errors: a bad request fails on any provider
+        self.retryable = retryable  # False for 4xx other than 429, retrying a bad request elsewhere won't help
 
 
 async def call_model(client: httpx.AsyncClient, url: str, model: str, body: dict, timeout: float, request_id: str) -> dict:
     try:
-        # One deadline for the whole call, body included. httpx's own timeouts apply
-        # to each read separately, so a server that trickles bytes could run far past 3 s.
-        # On timeout the request is cancelled and its connection closed.
+        # asyncio.timeout covers the whole request, including reading the body.
+        # httpx's timeouts are per read, so a server sending a few bytes at a time
+        # could go way past 3s without tripping them. Cancelling closes the connection too.
         async with asyncio.timeout(timeout):
             response = await client.post(f"{url}/v1/chat/completions", json={**body, "model": model, "stream": False})
     except TimeoutError:
@@ -36,7 +36,7 @@ async def call_model(client: httpx.AsyncClient, url: str, model: str, body: dict
             return data
         raise UpstreamError("malformed response")
 
-    # The raw upstream body goes to our logs only, never to the client.
+    # log the real upstream error, the client only gets a generic one
     logger.warning("[%s] %s returned %s: %s", request_id, url, response.status_code, response.text[:500])
     retryable = response.status_code == 429 or response.status_code >= 500
     raise UpstreamError(f"HTTP {response.status_code}", retryable)

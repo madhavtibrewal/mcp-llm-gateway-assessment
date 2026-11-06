@@ -15,7 +15,7 @@ REFUND = {"customer_id": "CUST-00001", "amount": 25.5, "reason": "Item arrived d
         "cust-12345",  # wrong case
         "CUST-12345\n",  # trailing newline
         " CUST-12345",  # IDs are not trimmed
-        "CUST-١٢٣٤٥",  # Arabic-Indic digits
+        "CUST-\u0661\u0662\u0663\u0664\u0665",  # Arabic-Indic digits
         12345,  # not a string
     ],
 )

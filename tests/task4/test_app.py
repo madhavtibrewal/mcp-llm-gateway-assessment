@@ -22,7 +22,7 @@ def make_client(tmp_path):
             client = httpx.AsyncClient(transport=httpx.MockTransport(FakeProviders(primary, secondary)))
             router = ModelRouter(client, ("http://primary", "big"), ("http://secondary", "small"))
         app = create_app(limiter, router)
-        # raise_app_exceptions=False: let the app's own 500 handler answer, as it would in production.
+        # so our 500 handler answers, instead of the exception bubbling up into the test
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         return httpx.AsyncClient(transport=transport, base_url="http://router"), limiter
 

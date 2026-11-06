@@ -1,7 +1,7 @@
-"""Mock OpenAI-compatible provider for trying the router.
+"""Fake provider for trying the router.
 
-Modes: ok, rate_limit (429), error (500 with a stack trace in the body), slow (waits 3.5 s).
-Set per process with --mode, or per request with {"mock": {"primary": "slow"}} in the body.
+Modes: ok, rate_limit (429), error (500 with a traceback in the body), slow (3.5s).
+Use --mode for the whole process, or {"mock": {"primary": "slow"}} in a request body.
 
     uv run python -m task4_model_router.mock_provider --name primary --port 9301
 """
@@ -31,7 +31,7 @@ def create_app(name: str, mode: str = "ok") -> FastAPI:
             return PlainTextResponse("Traceback (most recent call last):\n  KeyError: 'api_key=sk-live-SECRET'", status_code=500)
         if current == "slow":
             await asyncio.sleep(3.5)
-        # The mock always "writes" its full max_tokens, so usage is easy to drive from curl.
+        # pretend we used all of max_tokens, so it's easy to hit the limit with curl
         completion_tokens = body.get("max_tokens") or 5
         return {
             "id": f"cmpl-{name}",

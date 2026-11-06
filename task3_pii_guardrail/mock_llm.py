@@ -1,8 +1,8 @@
-"""Mock OpenAI-compatible provider that streams PII in awkward pieces.
+"""Fake OpenAI-style provider for testing the redaction.
 
-The reply is cut into random 1-6 character deltas, and every SSE event is sent
-in two network writes, so both of the guardrail's buffers get exercised.
-A user message starting with "ECHO:" sets the reply text.
+Streams the reply in random 1-6 char deltas and splits every SSE event across
+two writes, so the gateway's buffering actually has something to do.
+Send "ECHO: some text" as the user message to choose the reply.
 
     uv run python -m task3_pii_guardrail.mock_llm --port 9201
 """

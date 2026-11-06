@@ -1,8 +1,5 @@
-"""Task 3: LLM gateway endpoint that returns completions with PII redacted.
-
-POST /v1/chat/completions (OpenAI format). With "stream": true the upstream
-SSE stream is redacted as it arrives; otherwise the full message is redacted.
-"""
+"""Task 3 - OpenAI-style /v1/chat/completions proxy that redacts PII from the
+response, including while it's streaming."""
 
 import os
 
@@ -19,7 +16,7 @@ def error(status: int, message: str) -> JSONResponse:
 
 
 def upstream_error(status: int) -> JSONResponse:
-    # Never relay the upstream body: it can contain internal details.
+    # don't pass the upstream error body through, it can leak internals
     if status == 429:
         return error(429, "The model provider is rate limiting requests.")
     if 400 <= status < 500:
@@ -30,7 +27,7 @@ def upstream_error(status: int) -> JSONResponse:
 def create_app(upstream_url: str | None = None, client: httpx.AsyncClient | None = None) -> FastAPI:
     base = upstream_url or os.environ.get("LLM_UPSTREAM_URL", "http://127.0.0.1:9201")
     url = base.rstrip("/") + "/v1/chat/completions"
-    # read=60 is the longest gap allowed between chunks, not a limit on the whole stream.
+    # the read timeout is per chunk, so long streams are fine
     client = client or httpx.AsyncClient(timeout=httpx.Timeout(60, connect=5))
     app = FastAPI()
 

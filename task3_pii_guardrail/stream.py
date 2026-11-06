@@ -1,8 +1,7 @@
-"""Redacts an OpenAI-style SSE completion stream as it passes through.
+"""Redacts an OpenAI-style SSE stream on the way through.
 
-Two buffers, both small:
-  - bytes, until a complete SSE event has arrived (network chunks don't line up with events)
-  - text, per choice, inside StreamRedactor (only the current word is held)
+There are two buffers: raw bytes until a full SSE event has arrived (network
+chunks don't line up with events), and the text buffer in each StreamRedactor.
 """
 
 import json
@@ -16,12 +15,12 @@ MAX_EVENT_BYTES = 1_000_000
 
 
 def split_events(buffer: bytes) -> tuple[list[str], bytes]:
-    """Takes complete SSE events off the front of the buffer. Returns (event data, leftover bytes)."""
+    """Pulls complete events off the front of the buffer -> (list of event data, leftover bytes)."""
     buffer = buffer.replace(b"\r\n", b"\n")
     events = []
     while b"\n\n" in buffer:
         raw, buffer = buffer.split(b"\n\n", 1)
-        # Decode whole events only, so a multi-byte character split across chunks is safe.
+        # only decode complete events, so a utf-8 char split across two chunks is fine
         lines = [line[5:].removeprefix(" ") for line in raw.decode().split("\n") if line.startswith("data:")]
         if lines:
             events.append("\n".join(lines))
@@ -38,7 +37,7 @@ async def redact_stream(upstream_chunks):
     last_event: dict = {}
 
     def flush_all():
-        # Send whatever is still held, as one extra chunk per choice.
+        # emit anything still buffered as an extra chunk per choice
         for index, redactor in redactors.items():
             if tail := redactor.flush():
                 fields = {k: last_event[k] for k in ("id", "object", "created", "model") if k in last_event}
@@ -76,10 +75,10 @@ async def redact_stream(upstream_chunks):
                 yield sse(json.dumps(event))
     except Exception:
         logger.exception("Upstream stream failed")
-        # Don't flush: the held text might be the first half of an SSN.
+        # don't flush here, the buffer might be the first half of an SSN
         yield sse(json.dumps({"error": {"type": "upstream_error", "message": "The upstream stream ended unexpectedly."}}))
         return
 
-    # Upstream closed without [DONE]: whatever is held is final now.
+    # upstream closed without sending [DONE]
     for out in flush_all():
         yield out

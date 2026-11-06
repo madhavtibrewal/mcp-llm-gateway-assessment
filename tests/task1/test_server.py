@@ -11,7 +11,7 @@ INVALID_PARAMS = -32602
 
 @pytest.fixture(scope="module")
 def server():
-    # One process for the whole module; starting one takes a couple of seconds.
+    # one server for the whole module, starting it takes ~2s
     s = StdioServer("task1_mcp_server")
     s.initialize()
     yield s
@@ -69,7 +69,7 @@ def test_refund_succeeds(server):
     [("CUST-99999", 5.0, "not found"), ("CUST-00002", 60.0, "exceeds"), ("CUST-00003", 5.0, "closed")],
 )
 def test_refused_refunds_are_tool_errors(server, customer_id, amount, expected):
-    # Valid input that a business rule refuses: a result the model can read, not a protocol error.
+    # valid input but a business rule says no -> isError result, not a protocol error
     response = server.call_tool("trigger_refund", {"customer_id": customer_id, "amount": amount, "reason": "Item arrived damaged"})
     assert response["result"]["isError"] is True
     assert expected in response["result"]["content"][0]["text"]

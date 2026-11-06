@@ -1,8 +1,7 @@
-"""Per-tenant token rate limiter: a sliding window stored in an on-disk SQLite file.
+"""Sliding-window token limiter per tenant, stored in SQLite.
 
-Every admitted request is a row (tenant, timestamp, tokens). A tenant's usage
-is the sum of its rows from the last 60 seconds, so the window slides
-smoothly instead of resetting at the top of each minute.
+One row per request (tenant, ts, tokens). Usage is the sum of the tenant's rows
+from the last 60s, so it's a real sliding window, not a per-minute bucket.
 """
 
 import asyncio
@@ -29,11 +28,11 @@ class TokenRateLimiter:
             db.execute("CREATE INDEX IF NOT EXISTS usage_by_tenant ON usage (tenant, ts)")
 
     def _connect(self) -> sqlite3.Connection:
-        # isolation_level=None: we run BEGIN/COMMIT ourselves.
-        # timeout: how long to wait if another request holds the write lock.
+        # isolation_level=None so I can run BEGIN IMMEDIATE myself.
+        # timeout = how long to wait for the write lock.
         return sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
 
-    # SQLite calls block, so the async methods run them in a worker thread.
+    # sqlite3 is blocking, so the async methods run it in a thread
     async def reserve(self, tenant: str, tokens: int) -> int:
         return await asyncio.to_thread(self._reserve, tenant, tokens)
 
@@ -47,8 +46,8 @@ class TokenRateLimiter:
         """Records the tokens and returns the row id, or raises RateLimited."""
         now = self.clock()
         with closing(self._connect()) as db:
-            # IMMEDIATE takes the write lock now. Without it, two requests could both
-            # read "49,000 used", both decide they fit, and both get in.
+            # IMMEDIATE grabs the write lock up front. Without it two requests can
+            # both read "49k used", both think they fit, and both get inserted.
             db.execute("BEGIN IMMEDIATE")
             try:
                 db.execute("DELETE FROM usage WHERE ts <= ?", (now - self.window,))  # drop expired rows
@@ -66,7 +65,7 @@ class TokenRateLimiter:
                 raise
 
     def _retry_after(self, db, tenant, used, tokens, now) -> float:
-        # Walk the tenant's rows oldest first until enough of them would have expired.
+        # go through the rows oldest-first until enough of them would have expired
         for ts, row_tokens in db.execute("SELECT ts, tokens FROM usage WHERE tenant = ? ORDER BY ts", (tenant,)):
             used -= row_tokens
             if used + tokens <= self.max_tokens:

@@ -57,5 +57,5 @@ def test_real_servers_stream_incrementally():
                     arrivals.append(time.perf_counter() - start)
                     raw += piece
     assert content_of(split_events(raw)[0]) == redact(DEFAULT_REPLY)
-    # The first bytes arrive long before the stream ends, so nothing is buffered whole.
+    # the first bytes should show up well before the end of the stream
     assert arrivals[0] < 0.5 * arrivals[-1]

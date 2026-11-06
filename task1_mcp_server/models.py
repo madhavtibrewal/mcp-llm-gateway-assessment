@@ -1,19 +1,15 @@
-"""Input schemas for the two tools.
-
-These models validate every tool call, and they are also what tools/list
-advertises, so clients see the same rules the server enforces.
-"""
+"""Argument models for the two tools. tools/list uses these as the schemas too."""
 
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-# [0-9], not \d: \d also matches non-ASCII digits like "CUST-١٢٣٤٥".
+# [0-9] instead of \d, because \d also matches Arabic, Devanagari etc. digits
 CustomerId = Annotated[str, Field(pattern=r"^CUST-[0-9]{5}$", description="Customer ID, e.g. CUST-00001")]
 
 
 class StrictArgs(BaseModel):
-    # extra="forbid": unknown fields are an error. strict=True: no coercion, so "10" is not a number.
+    # reject extra fields, and don't coerce types ("10" shouldn't turn into 10.0)
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
@@ -23,9 +19,9 @@ class GetCustomerRecordArgs(StrictArgs):
 
 class TriggerRefundArgs(StrictArgs):
     customer_id: CustomerId
-    # allow_inf_nan=False: Python's JSON parser accepts NaN and Infinity, and inf > 0 is True.
+    # json.loads accepts NaN/Infinity and inf > 0 is True, so block them explicitly
     amount: Annotated[float, Field(gt=0, le=10_000, allow_inf_nan=False)]
-    # Stripped before the length check, so ten spaces is not a valid reason.
+    # strip first, otherwise "          " would count as 10 characters
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=10, max_length=500)]
 
 

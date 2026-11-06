@@ -1,7 +1,7 @@
-"""Runs an MCP server as a subprocess and speaks raw JSON-RPC to it over stdio.
+"""Runs an MCP server as a subprocess and talks raw JSON-RPC to it over stdio.
 
-Not the SDK client on purpose: the tests need to see every byte the server
-writes to stdout.
+Not using the SDK client here because the tests need to see exactly what the
+server writes to stdout.
 """
 
 import json

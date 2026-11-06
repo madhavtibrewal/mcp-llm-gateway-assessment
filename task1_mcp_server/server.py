@@ -1,9 +1,7 @@
-"""Task 1: customer service MCP server over stdio.
+"""Task 1 - customer service MCP server (stdio).
 
-Errors:
-  unknown tool / invalid arguments  -> JSON-RPC error -32602 (with per-field details)
-  valid call, refused by a rule     -> tool result with isError: true
-  unexpected crash                  -> JSON-RPC error -32603, details only in the logs
+Bad arguments or an unknown tool give a -32602 JSON-RPC error. A valid call that
+a business rule rejects gives a tool result with isError: true. Crashes give -32603.
 """
 
 import logging
@@ -23,7 +21,7 @@ logger = logging.getLogger(__name__)
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
 
-# Stand-in for a real customer database.
+# fake data instead of a real DB
 CUSTOMERS = {
     "CUST-00001": {"name": "Ada Lovelace", "status": "active", "refundable": 1200.00},
     "CUST-00002": {"name": "Alan Turing", "status": "active", "refundable": 50.00},
@@ -32,15 +30,15 @@ CUSTOMERS = {
 
 
 class StrictMCPServer(MCPServer):
-    """Validates arguments with our Pydantic models before the SDK runs a tool.
+    """MCPServer, but tool arguments are checked against our Pydantic models first.
 
-    On its own the SDK reports bad arguments as a tool result with isError: true.
-    The assessment asks for JSON-RPC error codes, so we raise MCPError instead.
+    The SDK's own validation returns bad input as isError: true. The task wants a
+    JSON-RPC error (-32602) instead, so I validate here and raise MCPError.
     """
 
     async def list_tools(self):
         tools = await super().list_tools()
-        # Advertise the strict schemas: pattern, bounds, no extra fields.
+        # the SDK builds schemas from the type hints, which don't have the pattern/limits
         return [t.model_copy(update={"input_schema": TOOL_ARGS[t.name].model_json_schema()}) for t in tools]
 
     async def call_tool(self, name, arguments, context=None):
@@ -51,7 +49,7 @@ class StrictMCPServer(MCPServer):
         try:
             args = model.model_validate(arguments)
         except ValidationError as e:
-            # Field and message only; the rejected value is not echoed back.
+            # say which field failed, but don't echo the value back
             errors = [{"field": ".".join(map(str, err["loc"])), "message": err["msg"]} for err in e.errors()]
             raise MCPError(INVALID_PARAMS, f"Invalid params for {name}", data=errors) from None
 
@@ -96,14 +94,14 @@ def trigger_refund(customer_id: str, amount: float, reason: str) -> dict:
 
 
 def main():
-    # stdout is reserved for JSON-RPC, so logs go to stderr.
+    # stdout is only for JSON-RPC messages, logs go to stderr
     logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
-        # While serving, the SDK writes JSON-RPC to a private copy of stdout and
-        # points fd 1 at stderr, so stray prints can't reach the client.
+        # while it's serving, the SDK writes JSON-RPC to its own copy of stdout
+        # and points fd 1 at stderr
         server.run(transport="stdio")
     finally:
-        # print() output can still be sitting in Python's buffer. It is flushed at
-        # exit, after the SDK has pointed fd 1 back at the real stdout, so redirect
-        # fd 1 to stderr again before that happens.
+        # ...but it puts fd 1 back when it stops, and anything print() left in the
+        # buffer gets flushed after that, i.e. into the client's stream. Point fd 1
+        # at stderr again. (test_stray_stdout_writes_go_to_stderr caught this)
         os.dup2(sys.stderr.fileno(), sys.stdout.fileno())

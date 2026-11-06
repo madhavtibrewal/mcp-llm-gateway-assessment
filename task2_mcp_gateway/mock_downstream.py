@@ -1,7 +1,5 @@
-"""Downstream MCP server for trying the gateway (real SDK, Streamable HTTP).
-
-GET /_stats shows how many times each tool actually ran, so you can see that
-denied calls never arrive.
+"""Small MCP server to put behind the gateway. GET /_stats counts the tool calls
+that actually ran, which is how the tests check blocked calls didn't get through.
 
     uv run python -m task2_mcp_gateway.mock_downstream --port 9001
 """
